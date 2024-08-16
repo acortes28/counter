@@ -22,7 +22,7 @@ fi
 
 # Verifica si Tkinter está instalado
 echo "Verificando si Tkinter está instalado..."
-if python -c "import tkinter" &> /dev/null; then
+if python3 -c "import tkinter" &> /dev/null; then
   echo "Tkinter está instalado."
 else
   echo "Tkinter no está instalado. Por favor, instala Tkinter según tu sistema operativo:"
@@ -43,7 +43,7 @@ if [ ! -f "$PYTHON_SCRIPT" ]; then
 fi
 
 # Ejecutar el archivo Python
-python "$PYTHON_SCRIPT"
+python3 "$PYTHON_SCRIPT"
 
 # Desactivar el entorno virtual
 deactivate

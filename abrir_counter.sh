@@ -7,6 +7,20 @@ VENV_DIR="env"
 if [ ! -d "$VENV_DIR" ]; then
   echo "El entorno virtual no existe. Creándolo..."
   python3 -m venv "$VENV_DIR"
+  
+  # Activar el entorno virtual
+  source "$VENV_DIR/bin/activate"
+  
+  # Instalar las dependencias desde requirements.txt si el archivo existe
+  if [ -f "requirements.txt" ]; then
+    echo "Instalando dependencias desde requirements.txt..."
+    pip install -r requirements.txt
+  else
+    echo "El archivo requirements.txt no se encontró. No se instalarán dependencias."
+  fi
+  
+  # Desactivar el entorno virtual
+  deactivate
 fi
 
 # Activar el entorno virtual
@@ -26,8 +40,10 @@ if [ ! -f "$PYTHON_SCRIPT" ]; then
   exit 1
 fi
 
+# Ejecutar el archivo Python
 $PYTHON_INTERPRETER "$PYTHON_SCRIPT"
 
 # Desactivar el entorno virtual
 deactivate
+
 

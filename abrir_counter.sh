@@ -30,6 +30,20 @@ source "$VENV_DIR/bin/activate"
 # Ruta al intérprete de Python en el entorno virtual
 PYTHON_INTERPRETER="$VENV_DIR/bin/python"
 
+# Verifica si Tkinter está instalado
+echo "Verificando si Tkinter está instalado..."
+if python -c "import tkinter" &> /dev/null; then
+  echo "Tkinter está instalado."
+else
+  echo "Tkinter no está instalado. Por favor, instala Tkinter según tu sistema operativo:"
+  echo "- En Ubuntu/Debian: sudo apt-get install python3-tk"
+  echo "- En Fedora: sudo dnf install python3-tkinter"
+  echo "- En Arch Linux: sudo pacman -S tk"
+  echo "Luego, ejecuta este script nuevamente."
+  deactivate
+  exit 1
+fi
+
 # Archivo Python a ejecutar
 PYTHON_SCRIPT="abrir_counter.py"
 

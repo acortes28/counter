@@ -1,0 +1,13 @@
+# Archivos de entorno virtual
+env/
+
+
+# Archivos Python
+main.py
+prueba.py
+setup.py
+cargar_horas.sh
+test.py
+
+# Archivos de bases de datos SQLite
+*.db

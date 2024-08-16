@@ -11,3 +11,5 @@ test.py
 
 # Archivos de bases de datos SQLite
 *.db
+
+abrir_counter.spec

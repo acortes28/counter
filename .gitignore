@@ -4,7 +4,6 @@ env/
 
 # Archivos Python
 main.py
-prueba.py
 setup.py
 cargar_horas.sh
 test.py

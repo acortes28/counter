@@ -11,7 +11,8 @@ import sqlite3
 
 class BasedeDatos:
     def __init__(self):
-    
+        
+        self.db = 'time_tracking.db'
         self.tabla_entradas = 'time_entries'
         self.tabla_tracking = 'app_state'
         self.tabla_activity = 'activity'
@@ -21,7 +22,7 @@ class BasedeDatos:
         self.insert_code_activities()
         
     def create_entry_table(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS {} (
@@ -41,7 +42,7 @@ class BasedeDatos:
         conn.close()
         
     def create_state_table(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS {} (
@@ -56,7 +57,7 @@ class BasedeDatos:
         conn.close()
         
     def create_activity_table(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS {} (
@@ -70,7 +71,7 @@ class BasedeDatos:
         conn.close()
         
     def insert_code_activities(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM {}'.format(self.tabla_activity))
         if cursor.fetchone()[0] == 0:
@@ -88,7 +89,7 @@ class BasedeDatos:
             conn.close()
 
     def save_app_state(self, activity, ticket, detail, last_time):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('DELETE FROM {}'.format(self.tabla_tracking))  # Eliminar estado anterior
         cursor.execute('INSERT INTO {} (last_activity, last_ticket, last_detail, last_time) VALUES (?, ?, ?, ?)'.format(self.tabla_tracking),
@@ -97,7 +98,7 @@ class BasedeDatos:
         conn.close()
 
     def load_app_state(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('SELECT last_activity, last_ticket, last_detail, last_time FROM {}'.format(self.tabla_tracking))
         state = cursor.fetchone()
@@ -105,7 +106,7 @@ class BasedeDatos:
         return state if state else (None, None, None, None)
         
     def load_today_entries(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
         cursor.execute('SELECT * FROM {} WHERE date = ? ORDER BY initial_hour'.format(self.tabla_entradas), (today,))
@@ -114,7 +115,7 @@ class BasedeDatos:
         return rows        
         
     def save_time_entry(self, date, activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('INSERT INTO {} (activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'.format(self.tabla_entradas), (activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours, date))
         conn.commit()
@@ -122,7 +123,7 @@ class BasedeDatos:
         
     def load_time_entries(self):
         date = datetime.now().strftime('%Y-%m-%d')
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         print(date)
         cursor.execute("SELECT * FROM {} WHERE date = '{}'".format(self.tabla_entradas, date))
@@ -131,7 +132,7 @@ class BasedeDatos:
         return rows 
         
     def load_logbook(self):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         #cursor.execute('SELECT * FROM {} ORDER BY date DESC, initial_hour DESC'.format(self.tabla_entradas))
         cursor.execute('''SELECT 
@@ -152,7 +153,7 @@ class BasedeDatos:
         return rows      
         
     def get_id(self, date, activity_code, comment, ticket,initial_hour):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('SELECT id FROM {} WHERE date=? AND activity_code=? AND comment=? AND ticket=? AND initial_hour=?'.format(self.tabla_entradas), (date, activity_code, comment, ticket,initial_hour))
         id = cursor.fetchone()
@@ -160,12 +161,29 @@ class BasedeDatos:
         return id
         
     def update_time_entry(self, id, date, activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours):
-        conn = sqlite3.connect('time_tracking.db')
+        conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
         cursor.execute('UPDATE {} SET date=?, activity_code=?, comment=?, ticket=?, initial_hour=?, final_hour=?, var_time=?, var_hours=? WHERE id = ?'.format(self.tabla_entradas), (date, activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours, id))
         conn.commit()
         conn.close()
+
+    def get_dates_from_db(self):
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        query = "SELECT DISTINCT date FROM {} ORDER BY date DESC".format(self.tabla_entradas)
+        cursor.execute(query)
+        dates = [row[0] for row in cursor.fetchall()]
+        dates.insert(0, datetime.now().strftime('%Y-%m-%d'))
+        conn.close()
+        return dates
             
+    def load_time_entries_for_date(self, date):
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM {} WHERE date = ?".format(self.tabla_entradas), (date,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
 
 class Cronometro:
     def __init__(self, root):
@@ -195,6 +213,8 @@ class Cronometro:
         self.entry_contrasena = None
         self.end_journey_status = False
         self.record_id = None
+        self.fecha = None
+        self.fecha_seleccionada = datetime.now().strftime('%Y-%m-%d')  # Establecer la fecha de hoy por defecto
 
     def configure_root(self):
         self.root.attributes('-topmost', 1)
@@ -208,8 +228,13 @@ class Cronometro:
         self.detail_label = ttk.Label(self.root, text="", font=("Helvetica", 24))
         self.detail_label.pack(pady=10)
 
+        self.total_hours_label = ttk.Label(self.root, text="Horas trabajadas: 0", font=("Helvetica", 24))
+        self.total_hours_label.pack(pady=10)
+
         self.create_buttons()
         self.create_listbox()
+        self.create_date_dropdown()
+        self.create_load_button()
 
     def create_buttons(self):
         button_frame = ttk.Frame(self.root)
@@ -314,14 +339,15 @@ class Cronometro:
         if self.end_journey_status == True:
             messagebox.showerror(title='Error', message='No puedes iniciar el almuerzo, tu jornada terminó')
             return
-    
+        
         now = datetime.now()
         lunch_start = now
         lunch_end = now + timedelta(hours=1)
-        
+        date = datetime.now().strftime('%Y-%m-%d')
         lunch_start_formatted = lunch_start.strftime('%H:%M:%S')
         lunch_end_formatted = lunch_end.strftime('%H:%M:%S')
-        self.record_time(self.last_registered_time or self.get_initial_time(), 
+        self.record_time(date, 
+                         self.last_registered_time or self.get_initial_time(), 
                          lunch_start_formatted, 
                          self.actividad, 
                          self.detalle, 
@@ -363,6 +389,7 @@ class Cronometro:
         activity = self.get_activity_name(activity_code)
         entry_text = f"{initial_hour} - {final_hour} - {activity} - Ticket: {ticket} - {comment}"
         self.time_listbox.insert(tk.END, entry_text)
+        self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
 
     def get_activity_name(self, activity_code):
         activity_names = {
@@ -397,11 +424,13 @@ class Cronometro:
     def end_journey(self):
         if messagebox.askyesno("Confirmar", "¿Estás seguro de que deseas terminar la jornada?"):
             now = datetime.now()
+            date = datetime.now().strftime('%Y-%m-%d')
             current_time = now.strftime('%H:%M:%S')
             
             # Registrar la última tarea en espera si existe
             if self.iniciado:
-                self.record_time(self.last_registered_time or self.get_initial_time(), 
+                self.record_time(date,
+                                 self.last_registered_time or self.get_initial_time(), 
                                  current_time, 
                                  self.actividad, 
                                  self.detalle, 
@@ -427,7 +456,9 @@ class Cronometro:
 
     def get_initial_time(self):
         now = datetime.now()
-        return self.format_time(now.hour * 3600 + now.minute * 60 + now.second)
+        ahora = self.format_time(now.hour * 3600 + now.minute * 60 + now.second)
+        print(ahora)
+        return ahora
 
     def update_clock(self):
         if self.running:
@@ -462,7 +493,7 @@ class Cronometro:
     def create_record_window(self):
         record_window = tk.Toplevel(self.root)
         record_window.title("Registrar Actividad")
-        record_window.geometry("500x300")
+        record_window.geometry("500x350")
         record_window.attributes('-topmost', 1)
         record_window.protocol("WM_DELETE_WINDOW", lambda: self.close_record_window(record_window))
         return record_window
@@ -471,6 +502,11 @@ class Cronometro:
         self.create_record_window_widgets(record_window)
 
     def create_record_window_widgets(self, record_window):
+        tk.Label(record_window, text="Fecha:").pack(pady=5)
+        fecha_combobox = ttk.Combobox(record_window, values=basededatos.get_dates_from_db(), state='readonly')
+        fecha_combobox.set(self.fecha_seleccionada)  # Establecer la fecha de hoy como seleccionada
+        fecha_combobox.pack(pady=5)
+
         tk.Label(record_window, text="Actividad:").pack(pady=5)
         actividad_combobox = ttk.Combobox(record_window, values=[
             'Análisis', 'Desarrollo', 'Capacitación', 'Diseño',
@@ -486,35 +522,70 @@ class Cronometro:
         ticket_entry = tk.Entry(record_window, validate="key", validatecommand=(record_window.register(self.validate_ticket), '%P'), width=50)
         ticket_entry.pack(pady=5)
 
-        submit_button = ttk.Button(record_window, text="Aceptar", command=lambda: self.submit_record_window(actividad_combobox, detalle_entry, ticket_entry, record_window))
+        submit_button = ttk.Button(record_window, text="Aceptar", command=lambda: self.submit_record_window(fecha_combobox, actividad_combobox, detalle_entry, ticket_entry, record_window))
         submit_button.pack(pady=10)
-        
-        record_window.bind('<Return>', lambda event: self.submit_record_window(actividad_combobox, detalle_entry, ticket_entry, record_window))
+        record_window.bind('<Return>', lambda event: self.submit_record_window(fecha_combobox, actividad_combobox, detalle_entry, ticket_entry, record_window))
         
 
     def close_record_window(self, record_window):
         self.record_window_open = False
         record_window.destroy()
 
-    def submit_record_window(self, actividad_combobox, detalle_entry, ticket_entry, record_window):
-        self.current_time = datetime.now().strftime('%H:%M:%S')
-        if self.iniciado:
-            self.record_time(self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
+    def submit_record_window(self, fecha_combobox, actividad_combobox, detalle_entry, ticket_entry, record_window):
+        
+        print(ticket_entry.get())
 
+        fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+
+        self.current_time = datetime.now().strftime('%H:%M:%S')
+
+        print(self.iniciado)
+
+        if self.iniciado and self.fecha:
+            if self.fecha == fecha_hoy :
+                self.record_time(fecha_hoy,self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
+
+        self.fecha = fecha_combobox.get()  # Obtener la fecha seleccionada
         self.actividad = actividad_combobox.get()
         self.detalle = detalle_entry.get()
         self.ticket = ticket_entry.get()
+        self.current_time = datetime.now().strftime('%H:%M:%S')
 
-        if self.actividad and self.ticket.isdigit():
-            self.last_registered_time = self.current_time
+        if self.fecha != fecha_hoy:
+            print('Se grabó registro fuera de fecha')
+            self.record_time(self.fecha, '09:00:00', '09:00:00', self.actividad, self.detalle, self.ticket)
+            record_window.destroy()
+            self.record_window_open = False
+            return
+
+        if not self.iniciado and self.actividad and self.ticket.isdigit():
             self.update_detail_label()
+            record_window.destroy()
+            self.iniciado  = True
+            print('Se grabó primer registro dentro de fecha')
+        elif self.actividad and self.ticket.isdigit() and self.iniciado and self.fecha == fecha_hoy:
+            print('Se grabó registro dentro de fecha')
+            self.last_registered_time = self.current_time
             self.iniciado = True
             self.record_window_open = False
+            self.update_detail_label()
+            basededatos.save_app_state(self.actividad, self.ticket, self.detalle, self.last_registered_time)
             record_window.destroy()
             messagebox.showinfo(title='Hora inicio', message=f'La hora de inicio es : {self.last_registered_time or self.get_initial_time()}')
-            basededatos.save_app_state(self.actividad, self.ticket, self.detalle, self.last_registered_time)
+            self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
         else:
             messagebox.showwarning("Advertencia", "Debes seleccionar una actividad y proporcionar un ticket numérico.")
+
+        # if self.actividad and self.ticket.isdigit():
+        #     if self.iniciado:
+        #         if self.fecha == fecha_hoy:
+        #             print('Se grabó registro dentro de fecha')
+        #             self.last_registered_time = self.current_time
+        #             self.iniciado = True
+        #             self.record_window_open = False
+        #             self.update_detail_label()
+        #         elif self.
+        
 
     def validate_ticket(self, value):
         return value.isdigit() or value == ""
@@ -523,9 +594,12 @@ class Cronometro:
         # No permitir caracteres ':' ni '-'
         return not any(char in value for char in ':-') or value == ""
 
-    def record_time(self, last_time, current_time, actividad, detalle, ticket):
-        self.time_listbox.insert(tk.END, f"{last_time} - {current_time} - {actividad} - Ticket: {ticket} - {detalle}")
-        date = datetime.now().strftime('%Y-%m-%d')
+    def record_time(self, date, last_time, current_time, actividad, detalle, ticket):
+        print(self.fecha_seleccionada)
+        print(date)
+        if date == self.fecha_seleccionada: 
+            self.time_listbox.insert(tk.END, f"{last_time} - {current_time} - {actividad} - Ticket: {ticket} - {detalle}")
+        #date = datetime.now().strftime('%Y-%m-%d')
         hours = self.calcular_var_time(last_time, current_time) / 3600
         actividad_code = self.obtener_codigo_opcion(actividad)
         try:
@@ -539,6 +613,7 @@ class Cronometro:
                 var_time=self.calcular_var_horas(last_time, current_time), 
                 var_hours=hours
             )
+            print('Se grabó registro en la base de datos')
         except Exception as e:
             print(f"Error al guardar el registro: {e}")
 
@@ -603,7 +678,9 @@ class Cronometro:
         formato = '%H:%M:%S'
         inicio = datetime.strptime(inicio_str, formato)
         fin = datetime.strptime(fin_str, formato)
-        return (fin - inicio).total_seconds()
+        var_time = (fin - inicio).total_seconds()
+        
+        return var_time
 
     def obtener_codigo_opcion(self, actividad):
         opciones = {
@@ -623,7 +700,7 @@ class Cronometro:
         selected_item = self.time_listbox.get(index)
         last_time, current_time, actividad, ticket, detalle = selected_item.split(' - ')
         ticket = ticket.split(': ')[1]
-        date = datetime.now().strftime('%Y-%m-%d')
+        date = self.fecha_seleccionada
         self.record_id = basededatos.get_id(
             date=date, 
             activity_code=self.obtener_codigo_opcion(actividad), 
@@ -687,7 +764,7 @@ class Cronometro:
         if new_actividad and new_ticket.isdigit():
             self.time_listbox.delete(index)
             self.time_listbox.insert(index, f"{new_last_time} - {new_current_time} - {new_actividad} - Ticket: {new_ticket} - {new_detalle}")
-            date = datetime.now().strftime('%Y-%m-%d')
+            date = self.fecha_seleccionada
             actividad_code = self.obtener_codigo_opcion(new_actividad)
             detalle = new_detalle
             ticket = new_ticket
@@ -710,6 +787,7 @@ class Cronometro:
             except Exception as e:
                 print(f"Error al actualizar el registro: {e}")
             edit_window.destroy()
+            self.update_total_hours()  # Actualizar horas trabajadas al editar una entrada
         else:
             messagebox.showwarning("Advertencia", "Debes seleccionar una actividad y proporcionar un ticket numérico.")
             
@@ -718,6 +796,35 @@ class Cronometro:
             escritor_csv = csv.writer(archivo_csv)
             for registro in nuevos_registros:
                 escritor_csv.writerow(registro)
+
+    def update_total_hours(self):
+        total_seconds = 0
+        for item in self.time_listbox.get(0, tk.END):
+            last_time, current_time, _, _, _ = item.split(' - ')
+            var_time = self.calcular_var_time(last_time, current_time)
+            total_seconds += var_time
+
+        total_hours = total_seconds / 3600
+        self.total_hours_label.config(text=f"Horas trabajadas: {total_hours:.2f}")
+
+    def create_date_dropdown(self):
+        self.fecha_combobox = ttk.Combobox(self.root, values=basededatos.get_dates_from_db(), state='readonly')
+        self.fecha_combobox.pack(pady=5)
+        self.fecha_combobox.bind("<<ComboboxSelected>>", self.on_date_selected)
+
+    def create_load_button(self):
+        load_button = ttk.Button(self.root, text="Cargar Tareas", command=self.load_tasks_for_selected_date)
+        load_button.pack(pady=5)
+
+    def on_date_selected(self, event):
+        self.fecha_seleccionada = self.fecha_combobox.get()
+
+    def load_tasks_for_selected_date(self):
+        if self.fecha_seleccionada:
+            self.time_listbox.delete(0, tk.END)  # Limpiar la listbox antes de cargar nuevas tareas
+            entries = basededatos.load_time_entries_for_date(self.fecha_seleccionada)  # Cargar tareas de la fecha seleccionada
+            for entry in entries:
+                self.add_entry_to_listbox(entry)
 
 class RedmineTimeLoggerApp:
     def __init__(self):

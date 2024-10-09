@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 import sqlite3
+import pandas as pd
 
 class BasedeDatos:
     def __init__(self):
@@ -16,10 +17,13 @@ class BasedeDatos:
         self.tabla_entradas = 'time_entries'
         self.tabla_tracking = 'app_state'
         self.tabla_activity = 'activity'
+        self.tabla_fechas = 'working_day'
         self.create_entry_table()
         self.create_state_table()
         self.create_activity_table()
         self.insert_code_activities()
+        self.create_working_day_table()
+        self.insert_working_days()
         
     def create_entry_table(self):
         conn = sqlite3.connect(self.db)
@@ -69,11 +73,43 @@ class BasedeDatos:
         '''.format(self.tabla_activity, self.tabla_entradas))
         conn.commit()
         conn.close()
+
+
+    def create_working_day_table(self):
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS {} (
+                id INTEGER PRIMARY KEY,
+                working_day TEXT
+            )
+        '''.format(self.tabla_fechas))
+        conn.commit()
+        conn.close()
+    
+    def insert_working_days(self):
+        anio = '2024'
+        fecha_inicio = datetime(2024, 1, 1)
+        fecha_fin = datetime(2024, 12, 31)
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(1) FROM {}'.format(self.tabla_fechas))
+        if cursor.fetchone()[0] == 0:
+            working_days = WorkingDays()
+            dias_habiles = working_days.orquestacion(anio, fecha_inicio,fecha_fin)
+            print(dias_habiles)
+            for dia in dias_habiles:
+                cursor.execute('''INSERT INTO {} (working_day) VALUES (?)
+                '''.format(self.tabla_fechas), (dia,))
+        conn.commit()
+        conn.close()
+
+
         
     def insert_code_activities(self):
         conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM {}'.format(self.tabla_activity))
+        cursor.execute('SELECT COUNT(1) FROM {}'.format(self.tabla_activity))
         if cursor.fetchone()[0] == 0:
             cursor.execute('''INSERT INTO {} (activity_code, description) 
                 VALUES 
@@ -85,8 +121,8 @@ class BasedeDatos:
                 (14,'Documentación'),
                 (10,'Otros'),
                 (25,'Análisis')'''.format(self.tabla_activity))
-            conn.commit()
-            conn.close()
+        conn.commit()
+        conn.close()
 
     def save_app_state(self, activity, ticket, detail, last_time):
         conn = sqlite3.connect(self.db)
@@ -121,11 +157,10 @@ class BasedeDatos:
         conn.commit()
         conn.close()
         
-    def load_time_entries(self):
-        date = datetime.now().strftime('%Y-%m-%d')
+    def load_time_entries(self, date):
+        #date = datetime.now().strftime('%Y-%m-%d')
         conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
-        print(date)
         cursor.execute("SELECT * FROM {} WHERE date = '{}'".format(self.tabla_entradas, date))
         rows = cursor.fetchall()
         conn.close()
@@ -170,7 +205,7 @@ class BasedeDatos:
     def get_dates_from_db(self):
         conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
-        query = "SELECT DISTINCT date FROM {} ORDER BY date DESC".format(self.tabla_entradas)
+        query = "SELECT DISTINCT working_day FROM {} ORDER BY working_day DESC".format(self.tabla_fechas)
         cursor.execute(query)
         dates = [row[0] for row in cursor.fetchall()]
         dates.insert(0, datetime.now().strftime('%Y-%m-%d'))
@@ -215,6 +250,7 @@ class Cronometro:
         self.record_id = None
         self.fecha = None
         self.fecha_seleccionada = datetime.now().strftime('%Y-%m-%d')  # Establecer la fecha de hoy por defecto
+        self.lst_detalle = []
 
     def configure_root(self):
         self.root.attributes('-topmost', 1)
@@ -233,7 +269,7 @@ class Cronometro:
 
         self.create_buttons()
         self.create_listbox()
-        self.create_date_dropdown()
+        self.fecha_combobox = self.create_date_dropdown()
         self.create_load_button()
 
     def create_buttons(self):
@@ -253,7 +289,8 @@ class Cronometro:
         self.export_button.grid(row=2, column=0, padx=10, pady=10)
     
         redmine = RedmineTimeLoggerApp()
-        self.upload_button = ttk.Button(button_frame, text="Subir a Redmine", command=redmine.run_script)
+        print(self.fecha_seleccionada)
+        self.upload_button = ttk.Button(button_frame, text="Subir a Redmine", command=lambda:redmine.run_script(self.fecha_seleccionada))
         self.upload_button.grid(row=1, column=0, padx=10, pady=10) 
         
         self.bitacora_button = ttk.Button(button_frame, text="Ver Bitácora", command=self.show_bitacora)
@@ -389,7 +426,7 @@ class Cronometro:
         activity = self.get_activity_name(activity_code)
         entry_text = f"{initial_hour} - {final_hour} - {activity} - Ticket: {ticket} - {comment}"
         self.time_listbox.insert(tk.END, entry_text)
-        self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
+        #self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
 
     def get_activity_name(self, activity_code):
         activity_names = {
@@ -514,8 +551,12 @@ class Cronometro:
         ], state='readonly', width=50)
         actividad_combobox.pack(pady=5)
 
+        # tk.Label(record_window, text="Detalle:").pack(pady=5)
+        # detalle_entry = tk.Entry(record_window, width=50, validate="key", validatecommand=(record_window.register(self.validate_detalle), '%P'))
+        # detalle_entry.pack(pady=5)
+
         tk.Label(record_window, text="Detalle:").pack(pady=5)
-        detalle_entry = tk.Entry(record_window, width=50, validate="key", validatecommand=(record_window.register(self.validate_detalle), '%P'))
+        detalle_entry = ttk.Combobox(record_window, width=50, values=self.lst_detalle, validatecommand=(record_window.register(self.validate_detalle), '%P'))
         detalle_entry.pack(pady=5)
 
         tk.Label(record_window, text="Ticket:").pack(pady=5)
@@ -541,9 +582,12 @@ class Cronometro:
 
         print(self.iniciado)
 
-        if self.iniciado and self.fecha:
-            if self.fecha == fecha_hoy :
-                self.record_time(fecha_hoy,self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
+
+        #FIXME: Se actualiza la etiqueta y después hace las validaciones del ticket
+        if fecha_combobox.get() and actividad_combobox.get() and detalle_entry.get() and ticket_entry.get(): 
+            if self.iniciado and self.fecha:
+                if self.fecha == fecha_hoy :
+                    self.record_time(fecha_hoy,self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
 
         self.fecha = fecha_combobox.get()  # Obtener la fecha seleccionada
         self.actividad = actividad_combobox.get()
@@ -551,18 +595,26 @@ class Cronometro:
         self.ticket = ticket_entry.get()
         self.current_time = datetime.now().strftime('%H:%M:%S')
 
-        if self.fecha != fecha_hoy:
-            print('Se grabó registro fuera de fecha')
-            self.record_time(self.fecha, '09:00:00', '09:00:00', self.actividad, self.detalle, self.ticket)
-            record_window.destroy()
-            self.record_window_open = False
-            return
+        if self.detalle not in self.lst_detalle:
+            print('No existe valor del detalle en la lista. Se agrega')
+            self.lst_detalle.append(self.detalle)
+        else:
+            print('Ya existe el detalle en su listado')
+
+        if fecha_combobox.get() and actividad_combobox.get() and detalle_entry.get() and ticket_entry.get(): 
+            if self.fecha != fecha_hoy:
+                print('Se grabó registro fuera de fecha')
+                self.record_time(self.fecha, '09:00:00', '09:00:00', self.actividad, self.detalle, self.ticket)
+                record_window.destroy()
+                self.record_window_open = False
+                return
 
         if not self.iniciado and self.actividad and self.ticket.isdigit():
             self.update_detail_label()
             record_window.destroy()
             self.iniciado  = True
             print('Se grabó primer registro dentro de fecha')
+            self.record_window_open = False
         elif self.actividad and self.ticket.isdigit() and self.iniciado and self.fecha == fecha_hoy:
             print('Se grabó registro dentro de fecha')
             self.last_registered_time = self.current_time
@@ -576,16 +628,6 @@ class Cronometro:
         else:
             messagebox.showwarning("Advertencia", "Debes seleccionar una actividad y proporcionar un ticket numérico.")
 
-        # if self.actividad and self.ticket.isdigit():
-        #     if self.iniciado:
-        #         if self.fecha == fecha_hoy:
-        #             print('Se grabó registro dentro de fecha')
-        #             self.last_registered_time = self.current_time
-        #             self.iniciado = True
-        #             self.record_window_open = False
-        #             self.update_detail_label()
-        #         elif self.
-        
 
     def validate_ticket(self, value):
         return value.isdigit() or value == ""
@@ -811,6 +853,7 @@ class Cronometro:
         self.fecha_combobox = ttk.Combobox(self.root, values=basededatos.get_dates_from_db(), state='readonly')
         self.fecha_combobox.pack(pady=5)
         self.fecha_combobox.bind("<<ComboboxSelected>>", self.on_date_selected)
+        return self.fecha_combobox
 
     def create_load_button(self):
         load_button = ttk.Button(self.root, text="Cargar Tareas", command=self.load_tasks_for_selected_date)
@@ -922,6 +965,13 @@ class RedmineTimeLoggerApp:
         self.login()
         ventana.destroy()
 
+    def agg_entries(self, data):
+        columns = ['ID', 'Fecha', 'Código', 'Descripción', 'Número', 'Hora Inicio', 'Hora Fin', 'var_time', 'var_hours']
+        df = pd.DataFrame(data, columns=columns)
+        df_grouped = df.groupby(['Fecha', 'Código', 'Número', 'Descripción'], as_index=False)['var_hours'].sum()
+        result = list(df_grouped.itertuples(index=False, name=None))
+        return result
+
     def entry_page(self):
         with requests.Session() as session:
             print("Entrando a Redmine ... ")
@@ -956,24 +1006,27 @@ class RedmineTimeLoggerApp:
         
         self.login_response = self.session.post(self.in_redmine.url, data=login_data)
         
-    def upload_data(self, session):
+    def upload_data(self, session, date):
         print("Iniciando carga de datos")
-        records = basededatos.load_time_entries()
-        
+        records = basededatos.load_time_entries(date=date)
+        print(f'datos cargados : {records}')
+        records = self.agg_entries(data=records)
+        print(f'datos procesados : {records}')
+
         for record in records:
             
-            issue_id = record[4]
-            activity_id = str(record[2])
+            issue_id = record[2]
+            activity_id = str(record[1])
             comments = record[3]
-            hours = record[8]
-            spent_on = record[1]
-            print('ticket: {} - actividad : {} - comentario : {} - tiempo: {} - horas : {}'.format(issue_id, activity_id, comments, hours, spent_on))
-            print(self.url_new.format(record[4]))
-            url_new_response = session.get(self.url_new.format(record[4]))
+            hours = record[4]
+            spent_on = record[0]
+            print('ticket: {} - actividad : {} - comentario : {} - tiempo: {} - fecha : {}'.format(issue_id, activity_id, comments, hours, spent_on))
+            url_new_response = session.get(self.url_new.format(record[2]))
+            print(url_new_response)
             if url_new_response.status_code == 200:
                 soup = BeautifulSoup(url_new_response.text, 'html.parser')
                 csrf_token = soup.find('meta', attrs={'name': 'csrf-token'})
-                option = self.get_option_by_id(record[2])
+                option = self.get_option_by_id(record[1])
                 print(option)
                 if option != 'error':
                 
@@ -996,7 +1049,7 @@ class RedmineTimeLoggerApp:
 
         messagebox.showinfo(title='Carga completa', message='Información actualizada en Redmine')
         
-    def run_script(self):
+    def run_script(self, date):
         if app.end_journey_status == False:
             messagebox.showerror(title='Error', message='No se puede correr el script, debes terminar la jornada')
             return
@@ -1007,7 +1060,7 @@ class RedmineTimeLoggerApp:
                 self.window_login()
                 print(self.login_bool)
                 if self.login_bool == True:
-                    self.upload_data(self.session)
+                    self.upload_data(self.session, date)
                 else:
                     messagebox.showerror("Error", "No se pudo iniciar sesión en Redmine.")
             else:
@@ -1015,10 +1068,49 @@ class RedmineTimeLoggerApp:
         else:
             print("Script cancelado por el usuario.")   
 
+
+class WorkingDays:
+# Obtener los feriados desde la API de feriados de Chile
+    def obtener_feriados(self, anio):
+        url = f"https://apis.digital.gob.cl/fl/feriados/{anio}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()  # Lanza un error si la respuesta no es 200
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error al obtener los feriados: {e}")
+            return []
+
+    # Verificar si una fecha es día hábil (lunes a viernes y que no sea feriado)
+    def es_dia_habil(self, fecha, feriados):
+        # Comprobar si es sábado o domingo
+        if fecha.weekday() >= 5:
+            return False
+        # Comprobar si es feriado
+        return fecha.strftime('%Y-%m-%d') not in feriados
+
+    # Obtener el rango de fechas hábiles
+    def obtener_dias_habiles(self, inicio, fin, feriados):
+        dias_habiles = []
+        fecha_actual = inicio
+        while fecha_actual <= fin:
+            if self.es_dia_habil(fecha_actual, feriados):
+                dias_habiles.append(fecha_actual.strftime('%Y-%m-%d'))
+            fecha_actual += timedelta(days=1)
+        return dias_habiles
+
+    def orquestacion(self, anio, inicio, fin):
+        # Obtener feriados para el año
+        dias_feriados = self.obtener_feriados(anio)
+        fechas_feriados = [feriado['date'] for feriado in dias_feriados]
+        dias_habiles = self.obtener_dias_habiles(inicio, fin, fechas_feriados)
+        return dias_habiles
+
 if __name__ == "__main__":
     basededatos = BasedeDatos()
     root = tk.Tk()
     app = Cronometro(root)
     root.mainloop()
         
+
           

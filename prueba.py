@@ -17,10 +17,13 @@ class BasedeDatos:
         self.tabla_entradas = 'time_entries'
         self.tabla_tracking = 'app_state'
         self.tabla_activity = 'activity'
+        self.tabla_fechas = 'working_day'
         self.create_entry_table()
         self.create_state_table()
         self.create_activity_table()
         self.insert_code_activities()
+        self.create_working_day_table()
+        self.insert_working_days()
         
     def create_entry_table(self):
         conn = sqlite3.connect(self.db)
@@ -70,11 +73,43 @@ class BasedeDatos:
         '''.format(self.tabla_activity, self.tabla_entradas))
         conn.commit()
         conn.close()
+
+
+    def create_working_day_table(self):
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS {} (
+                id INTEGER PRIMARY KEY,
+                working_day TEXT
+            )
+        '''.format(self.tabla_fechas))
+        conn.commit()
+        conn.close()
+    
+    def insert_working_days(self):
+        anio = '2024'
+        fecha_inicio = datetime(2024, 1, 1)
+        fecha_fin = datetime(2024, 12, 31)
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(1) FROM {}'.format(self.tabla_fechas))
+        if cursor.fetchone()[0] == 0:
+            working_days = WorkingDays()
+            dias_habiles = working_days.orquestacion(anio, fecha_inicio,fecha_fin)
+            print(dias_habiles)
+            for dia in dias_habiles:
+                cursor.execute('''INSERT INTO {} (working_day) VALUES (?)
+                '''.format(self.tabla_fechas), (dia,))
+        conn.commit()
+        conn.close()
+
+
         
     def insert_code_activities(self):
         conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM {}'.format(self.tabla_activity))
+        cursor.execute('SELECT COUNT(1) FROM {}'.format(self.tabla_activity))
         if cursor.fetchone()[0] == 0:
             cursor.execute('''INSERT INTO {} (activity_code, description) 
                 VALUES 
@@ -86,8 +121,8 @@ class BasedeDatos:
                 (14,'Documentación'),
                 (10,'Otros'),
                 (25,'Análisis')'''.format(self.tabla_activity))
-            conn.commit()
-            conn.close()
+        conn.commit()
+        conn.close()
 
     def save_app_state(self, activity, ticket, detail, last_time):
         conn = sqlite3.connect(self.db)
@@ -170,7 +205,7 @@ class BasedeDatos:
     def get_dates_from_db(self):
         conn = sqlite3.connect(self.db)
         cursor = conn.cursor()
-        query = "SELECT DISTINCT date FROM {} ORDER BY date DESC".format(self.tabla_entradas)
+        query = "SELECT DISTINCT working_day FROM {} ORDER BY working_day DESC".format(self.tabla_fechas)
         cursor.execute(query)
         dates = [row[0] for row in cursor.fetchall()]
         dates.insert(0, datetime.now().strftime('%Y-%m-%d'))
@@ -391,7 +426,7 @@ class Cronometro:
         activity = self.get_activity_name(activity_code)
         entry_text = f"{initial_hour} - {final_hour} - {activity} - Ticket: {ticket} - {comment}"
         self.time_listbox.insert(tk.END, entry_text)
-        self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
+        #self.update_total_hours()  # Actualizar horas trabajadas al agregar una entrada
 
     def get_activity_name(self, activity_code):
         activity_names = {
@@ -486,8 +521,8 @@ class Cronometro:
         self.last_registered_time = None  
 
     def open_record_window(self):
-        # if self.record_window_open:
-        #     return
+        if self.record_window_open:
+            return
         self.record_window_open = True
         record_window = self.create_record_window()
         self.setup_record_window(record_window)
@@ -548,10 +583,11 @@ class Cronometro:
         print(self.iniciado)
 
 
-        #FIXME: Se actualiza la etiqueta y después hace las validaciones del ticket 
-        if self.iniciado and self.fecha:
-            if self.fecha == fecha_hoy :
-                self.record_time(fecha_hoy,self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
+        #FIXME: Se actualiza la etiqueta y después hace las validaciones del ticket
+        if fecha_combobox.get() and actividad_combobox.get() and detalle_entry.get() and ticket_entry.get(): 
+            if self.iniciado and self.fecha:
+                if self.fecha == fecha_hoy :
+                    self.record_time(fecha_hoy,self.last_registered_time or self.get_initial_time(), self.current_time, self.actividad, self.detalle, self.ticket)
 
         self.fecha = fecha_combobox.get()  # Obtener la fecha seleccionada
         self.actividad = actividad_combobox.get()
@@ -565,18 +601,20 @@ class Cronometro:
         else:
             print('Ya existe el detalle en su listado')
 
-        if self.fecha != fecha_hoy:
-            print('Se grabó registro fuera de fecha')
-            self.record_time(self.fecha, '09:00:00', '09:00:00', self.actividad, self.detalle, self.ticket)
-            record_window.destroy()
-            self.record_window_open = False
-            return
+        if fecha_combobox.get() and actividad_combobox.get() and detalle_entry.get() and ticket_entry.get(): 
+            if self.fecha != fecha_hoy:
+                print('Se grabó registro fuera de fecha')
+                self.record_time(self.fecha, '09:00:00', '09:00:00', self.actividad, self.detalle, self.ticket)
+                record_window.destroy()
+                self.record_window_open = False
+                return
 
         if not self.iniciado and self.actividad and self.ticket.isdigit():
             self.update_detail_label()
             record_window.destroy()
             self.iniciado  = True
             print('Se grabó primer registro dentro de fecha')
+            self.record_window_open = False
         elif self.actividad and self.ticket.isdigit() and self.iniciado and self.fecha == fecha_hoy:
             print('Se grabó registro dentro de fecha')
             self.last_registered_time = self.current_time
@@ -815,7 +853,7 @@ class Cronometro:
         self.fecha_combobox = ttk.Combobox(self.root, values=basededatos.get_dates_from_db(), state='readonly')
         self.fecha_combobox.pack(pady=5)
         self.fecha_combobox.bind("<<ComboboxSelected>>", self.on_date_selected)
-        return self.fecha_combobox.get()
+        return self.fecha_combobox
 
     def create_load_button(self):
         load_button = ttk.Button(self.root, text="Cargar Tareas", command=self.load_tasks_for_selected_date)
@@ -1029,6 +1067,44 @@ class RedmineTimeLoggerApp:
                 messagebox.showerror("Error", "No se pudieron obtener los tokens necesarios.")
         else:
             print("Script cancelado por el usuario.")   
+
+
+class WorkingDays:
+# Obtener los feriados desde la API de feriados de Chile
+    def obtener_feriados(self, anio):
+        url = f"https://apis.digital.gob.cl/fl/feriados/{anio}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()  # Lanza un error si la respuesta no es 200
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error al obtener los feriados: {e}")
+            return []
+
+    # Verificar si una fecha es día hábil (lunes a viernes y que no sea feriado)
+    def es_dia_habil(self, fecha, feriados):
+        # Comprobar si es sábado o domingo
+        if fecha.weekday() >= 5:
+            return False
+        # Comprobar si es feriado
+        return fecha.strftime('%Y-%m-%d') not in feriados
+
+    # Obtener el rango de fechas hábiles
+    def obtener_dias_habiles(self, inicio, fin, feriados):
+        dias_habiles = []
+        fecha_actual = inicio
+        while fecha_actual <= fin:
+            if self.es_dia_habil(fecha_actual, feriados):
+                dias_habiles.append(fecha_actual.strftime('%Y-%m-%d'))
+            fecha_actual += timedelta(days=1)
+        return dias_habiles
+
+    def orquestacion(self, anio, inicio, fin):
+        # Obtener feriados para el año
+        dias_feriados = self.obtener_feriados(anio)
+        fechas_feriados = [feriado['date'] for feriado in dias_feriados]
+        dias_habiles = self.obtener_dias_habiles(inicio, fin, fechas_feriados)
+        return dias_habiles
 
 if __name__ == "__main__":
     basededatos = BasedeDatos()

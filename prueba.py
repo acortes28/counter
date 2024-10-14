@@ -9,6 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 import sqlite3
 import pandas as pd
+import re
 
 class BasedeDatos:
     def __init__(self):
@@ -219,7 +220,29 @@ class BasedeDatos:
         rows = cursor.fetchall()
         conn.close()
         return rows
+    
+    def import_records_from_redmine(self, records):
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT date FROM {}'.format(self.tabla_entradas))
+        dates_array = cursor.fetchall()
+        print(dates_array)
+        print(type(dates_array))
 
+        if len(dates_array) != 0:
+            dates_array = dates_array[0]
+
+        for i in records:
+            date = i[0]
+            ticket = i[1]
+            activity_code = i[2]
+            comment = i[3]
+            hours = i[4]
+            if date not in dates_array:
+                cursor.execute('INSERT INTO {} (activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours, date) VALUES (?, ?, ?, null, null, null, ?, ?)'.format(self.tabla_entradas), (activity_code, comment, ticket, hours, date))
+        conn.commit()
+        conn.close()
+        
 class Cronometro:
     def __init__(self, root):
         self.root = root
@@ -232,6 +255,7 @@ class Cronometro:
         self.load_today_tasks()
         self.load_app_state()
         self.update_detail_label()
+        self.create_import_button()
 
     def init_variables(self):
         self.running = False
@@ -295,6 +319,13 @@ class Cronometro:
         
         self.bitacora_button = ttk.Button(button_frame, text="Ver Bitácora", command=self.show_bitacora)
         self.bitacora_button.grid(row=2, column=1, padx=10, pady=10)
+
+
+    def create_import_button(self):
+        redmine = RedmineTimeLoggerApp()
+        import_button = ttk.Button(self.root, text="Importar registros", command=redmine.import_records_from_redmine)
+        import_button.pack(pady=10)
+
         
     def show_bitacora(self):
         bitacora_window = tk.Toplevel(self.root)
@@ -637,13 +668,14 @@ class Cronometro:
         return not any(char in value for char in ':-') or value == ""
 
     def record_time(self, date, last_time, current_time, actividad, detalle, ticket):
+        utils = Utils()
         print(self.fecha_seleccionada)
         print(date)
         if date == self.fecha_seleccionada: 
             self.time_listbox.insert(tk.END, f"{last_time} - {current_time} - {actividad} - Ticket: {ticket} - {detalle}")
         #date = datetime.now().strftime('%Y-%m-%d')
         hours = self.calcular_var_time(last_time, current_time) / 3600
-        actividad_code = self.obtener_codigo_opcion(actividad)
+        actividad_code = utils.obtener_codigo_opcion(actividad)
         try:
             basededatos.save_time_entry(
                 date=date, 
@@ -661,6 +693,8 @@ class Cronometro:
 
     def export_to_csv(self):
         
+        utils = Utils()
+
         #ubicacion = filedialog.asksaveasfilename(filetypes=[('CSV files', '*.csv')])
         ubicacion = 'tareas.csv'
         #self.record_time(self.last_registered_time or self.get_initial_time(), datetime.now().strftime('%H:%M:%S'), self.actividad, self.detalle, self.ticket)
@@ -688,7 +722,7 @@ class Cronometro:
                 # Excluir los registros de almuerzo
                 if actividad.lower() != 'almuerzo':
                     var_time = self.calcular_var_time(last_time, current_time) / 3600
-                    actividad_code = self.obtener_codigo_opcion(actividad)
+                    actividad_code = utils.obtener_codigo_opcion(actividad)
                     csv_writer.writerow([ticket, today_date, var_time, detalle, actividad_code])
                     var_horas = self.calcular_var_horas(last_time,current_time)
                     record = [
@@ -724,20 +758,8 @@ class Cronometro:
         
         return var_time
 
-    def obtener_codigo_opcion(self, actividad):
-        opciones = {
-            'Diseño': 8,
-            'Desarrollo': 9,
-            'Gestión de tickets': 11,
-            'Capacitación': 12,
-            'Reunión': 13,
-            'Documentación': 14,
-            'Otros': 10,
-            'Análisis': 25
-        }
-        return opciones.get(actividad, 'error')
-
     def edit_record(self, event):
+        utils = Utils()
         index = self.time_listbox.curselection()[0]
         selected_item = self.time_listbox.get(index)
         last_time, current_time, actividad, ticket, detalle = selected_item.split(' - ')
@@ -745,7 +767,7 @@ class Cronometro:
         date = self.fecha_seleccionada
         self.record_id = basededatos.get_id(
             date=date, 
-            activity_code=self.obtener_codigo_opcion(actividad), 
+            activity_code=utils.obtener_codigo_opcion(actividad), 
             comment=detalle, 
             ticket=ticket,
             initial_hour=last_time
@@ -797,6 +819,7 @@ class Cronometro:
         edit_window.bind('<Return>', lambda event: self.submit_edit_window(edit_window, index, last_time_entry, current_time_entry, actividad_combobox, detalle_entry, ticket_entry))
 
     def submit_edit_window(self, edit_window, index, last_time_entry, current_time_entry, actividad_combobox, detalle_entry, ticket_entry):
+        utils = Utils()
         new_last_time = last_time_entry.get()
         new_current_time = current_time_entry.get()
         new_actividad = actividad_combobox.get()
@@ -807,7 +830,7 @@ class Cronometro:
             self.time_listbox.delete(index)
             self.time_listbox.insert(index, f"{new_last_time} - {new_current_time} - {new_actividad} - Ticket: {new_ticket} - {new_detalle}")
             date = self.fecha_seleccionada
-            actividad_code = self.obtener_codigo_opcion(new_actividad)
+            actividad_code = utils.obtener_codigo_opcion(new_actividad)
             detalle = new_detalle
             ticket = new_ticket
             last_time = new_last_time
@@ -883,7 +906,7 @@ class RedmineTimeLoggerApp:
         self.in_redmine = None
         self.parametro = None
         self.token = None
-        self.session = None
+        self.session = None       
 
     def get_option_by_id(self, option_id):
         options = {
@@ -1005,6 +1028,23 @@ class RedmineTimeLoggerApp:
         }
         
         self.login_response = self.session.post(self.in_redmine.url, data=login_data)
+
+    def import_records_from_redmine(self):
+        messagebox.showinfo(title='Importación de registros de redmine', message='Empezará la importación de registros. Recuerde ejecutar solo una vez')
+        base_de_datos = BasedeDatos()
+        utils = Utils()
+        import_window = filedialog.askopenfile(title='Selecciona el archivo csv de redmine')
+        redmine_df = pd.read_csv(import_window, delimiter=';')
+        df = redmine_df[['Fecha', 'Actividad','Petición',  'Comentario', 'Horas']]
+        df['Actividad'] = df['Actividad'].apply(utils.obtener_codigo_opcion)
+        df['Ticket'] = df['Petición'].apply(utils.extraer_numero)
+        df_final = df[['Fecha', 'Ticket', 'Actividad', 'Comentario', 'Horas']]
+        records = list(df_final.itertuples(index=False, name=None))
+        base_de_datos.import_records_from_redmine(records)
+        messagebox.showinfo(title='Importación finalizada', message='Puede visualizar los registros en la bitácora')
+        return records
+    
+
         
     def upload_data(self, session, date):
         print("Iniciando carga de datos")
@@ -1105,6 +1145,33 @@ class WorkingDays:
         fechas_feriados = [feriado['date'] for feriado in dias_feriados]
         dias_habiles = self.obtener_dias_habiles(inicio, fin, fechas_feriados)
         return dias_habiles
+
+
+class Utils:
+
+    def __init__(self) -> None:
+        pass
+
+
+        
+    def obtener_codigo_opcion(self, actividad):
+        opciones = {
+            'Diseño': 8,
+            'Desarrollo': 9,
+            'Gestión de tickets': 11,
+            'Capacitación': 12,
+            'Reunión': 13,
+            'Documentación': 14,
+            'Otros': 10,
+            'Análisis': 25
+        }
+        return opciones.get(actividad, 'error')
+    
+    def extraer_numero(self,texto):
+        match = re.search(r'#(\d+)', texto)
+        if match:
+            return int(match.group(1))  # Convertir el número a entero
+        return None  # Retornar None si no se encuentra el número 
 
 if __name__ == "__main__":
     basededatos = BasedeDatos()

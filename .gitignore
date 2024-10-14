@@ -11,4 +11,6 @@ test.py
 # Archivos de bases de datos SQLite
 *.db
 
+*.sql
+*.csv
 abrir_counter.spec

@@ -1,5 +1,12 @@
 # counter
 
+##Generar ejecutable
+
+Si deseas generar un ejecutable de la aplicación entonces debes ejecutar el siguiente comando:
+
+```
+pyinstaller --onefile --hidden-import nombre_libreria abrir_counter.py
+```
 
 ## Importar horas desde redmine
 
@@ -18,6 +25,11 @@ Aquí preguntará las propiedades de exportación. Se debe elegir:
 * UTF-8
 
 ![Paso 1](./img/step_3.png)
+
+Luego en la aplicación Counter deberás elegir la opción "Importar registros". De ahí seleccionar el archivo descargado y presionar 'Aceptar'.
+
+Para verificar que los registros fueron importados debes ir a 'Bitácora' y revisar si están los registros añadidos.
+
 
 
 ## Diagrama de clases

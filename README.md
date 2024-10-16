@@ -1,13 +1,3 @@
-# counter
-
-##Generar ejecutable
-
-Si deseas generar un ejecutable de la aplicación entonces debes ejecutar el siguiente comando:
-
-```
-pyinstaller --onefile --hidden-import nombre_libreria abrir_counter.py
-```
-
 ## Importar horas desde redmine
 
 ### Importación manual
@@ -30,7 +20,11 @@ Luego en la aplicación Counter deberás elegir la opción "Importar registros".
 
 Para verificar que los registros fueron importados debes ir a 'Bitácora' y revisar si están los registros añadidos.
 
+## Como ocupar el counter
 
+Para inicar la jornada se debe hacer click en "Registrar actividad", esto hará aparecer un cuadro de texto donde se debe seleccionar el tipo de Actividad, Los comentarios y el ticket asociado.
+
+Al inicar la actividad esta se despegará en un texto debajo de la hora, en la cual 
 
 ## Diagrama de clases
 
@@ -137,4 +131,14 @@ BasedeDatos --> Cronometro : "utiliza"
 Cronometro --> RedmineTimeLoggerApp : "utiliza"
 Cronometro --> WorkingDays : "utiliza"
 
+```
+
+# counter
+
+## Generar ejecutable
+
+Si deseas generar un ejecutable de la aplicación entonces debes ejecutar el siguiente comando:
+
+```
+pyinstaller --onefile abrir_counter.py
 ```

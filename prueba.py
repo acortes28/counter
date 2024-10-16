@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 import sqlite3
 import pandas as pd
 import re
+import traceback
 
 class BasedeDatos:
     def __init__(self):
@@ -242,6 +243,23 @@ class BasedeDatos:
                 cursor.execute('INSERT INTO {} (activity_code, comment, ticket, initial_hour, final_hour, var_time, var_hours, date) VALUES (?, ?, ?, null, null, null, ?, ?)'.format(self.tabla_entradas), (activity_code, comment, ticket, hours, date))
         conn.commit()
         conn.close()
+
+    def delete_time_entry(self, date, activity, ticket, comment):
+        util = Utils()
+        conn = sqlite3.connect(self.db)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                DELETE FROM {} 
+                WHERE date = ? AND activity_code = ? AND ticket = ? AND comment = ?
+            '''.format(self.tabla_entradas), (date, str(util.obtener_codigo_opcion(activity)), ticket, comment))
+            conn.commit()
+            return cursor.rowcount > 0  # Retorna True si se eliminó al menos un registro
+        except sqlite3.Error as e:
+            print(f"Error al eliminar el registro: {e}")
+            return False
+        finally:
+            conn.close()
         
 class Cronometro:
     def __init__(self, root):
@@ -275,6 +293,7 @@ class Cronometro:
         self.fecha = None
         self.fecha_seleccionada = datetime.now().strftime('%Y-%m-%d')  # Establecer la fecha de hoy por defecto
         self.lst_detalle = []
+        self.style = ttk.Style()
 
     def configure_root(self):
         self.root.attributes('-topmost', 1)
@@ -299,8 +318,12 @@ class Cronometro:
     def create_buttons(self):
         button_frame = ttk.Frame(self.root)
         button_frame.pack(pady=10)
+
+        self.style.configure("Red.TButton", background="red", foreground="white")
+        self.style.configure("Green.TButton", background="green", foreground="white")
+        self.style.configure("Blue.TButton", background="blue", foreground="white")        
     
-        self.record_button = ttk.Button(button_frame, text="Registrar Actividad", command=self.open_record_window)
+        self.record_button = ttk.Button(button_frame, style="Blue.TButton", text="Registrar Actividad", command=self.open_record_window)
         self.record_button.grid(row=0, column=0, padx=10, pady=10)
     
         self.end_journey_button = ttk.Button(button_frame, text="Terminar jornada", command=self.end_journey)
@@ -314,16 +337,109 @@ class Cronometro:
     
         redmine = RedmineTimeLoggerApp()
         print(self.fecha_seleccionada)
-        self.upload_button = ttk.Button(button_frame, text="Subir a Redmine", command=lambda:redmine.run_script(self.fecha_seleccionada))
+        self.upload_button = ttk.Button(button_frame, style= "Red.TButton", text="Subir a Redmine", command=lambda:redmine.run_script(self.fecha_seleccionada))
         self.upload_button.grid(row=1, column=0, padx=10, pady=10) 
         
-        self.bitacora_button = ttk.Button(button_frame, text="Ver Bitácora", command=self.show_bitacora)
+        self.bitacora_button = ttk.Button(button_frame, style="Blue.TButton", text="Ver Bitácora", command=self.show_bitacora)
         self.bitacora_button.grid(row=2, column=1, padx=10, pady=10)
+        
+        self.bitacora_button = ttk.Button(button_frame, text="Eliminar registro", command=self.delete_record)
+        self.bitacora_button.grid(row=0, column=3, padx=10, pady=10)
 
+        self.bitacora_button = ttk.Button(button_frame, text="Subir registro", command=self.move_item_up)
+        self.bitacora_button.grid(row=1, column=3, padx=10, pady=10) 
+
+        self.bitacora_button = ttk.Button(button_frame, text="Bajar registro", command=self.move_item_down)
+        self.bitacora_button.grid(row=2, column=3, padx=10, pady=10)              
+
+
+    def move_item_down(self):
+        selected_indices = self.time_listbox.curselection()
+        if not selected_indices:
+            messagebox.showwarning("Advertencia", "Por favor, selecciona un registro para mover.")
+            return
+
+        index = selected_indices[0]
+        if index == self.time_listbox.size() - 1:
+            messagebox.showinfo("Información", "Este elemento ya está en la parte inferior.")
+            return
+
+        # Obtener el elemento seleccionado y el elemento de abajo
+        current_item = self.time_listbox.get(index)
+        lower_item = self.time_listbox.get(index + 1)
+
+        # Intercambiar los elementos en la listbox
+        self.time_listbox.delete(index)
+        self.time_listbox.delete(index)
+        self.time_listbox.insert(index, lower_item)
+        self.time_listbox.insert(index + 1, current_item)
+
+        # Seleccionar el elemento movido
+        self.time_listbox.selection_clear(0, tk.END)
+        self.time_listbox.selection_set(index + 1)
+
+
+
+    def move_item_up(self):
+        selected_indices = self.time_listbox.curselection()
+        if not selected_indices:
+            messagebox.showwarning("Advertencia", "Por favor, selecciona un registro para mover.")
+            return
+
+        index = selected_indices[0]
+        if index == 0:
+            messagebox.showinfo("Información", "Este elemento ya está en la parte superior.")
+            return
+
+        # Obtener el elemento seleccionado y el elemento de arriba
+        current_item = self.time_listbox.get(index)
+        upper_item = self.time_listbox.get(index - 1)
+
+        # Intercambiar los elementos en la listbox
+        self.time_listbox.delete(index - 1)
+        self.time_listbox.delete(index - 1)
+        self.time_listbox.insert(index - 1, current_item)
+        self.time_listbox.insert(index, upper_item)
+
+        # Seleccionar el elemento movido
+        self.time_listbox.selection_clear(0, tk.END)
+        self.time_listbox.selection_set(index - 1)
+
+    def delete_record(self):
+        selected_indices = self.time_listbox.curselection()
+        if not selected_indices:
+            messagebox.showwarning("Advertencia", "Por favor, selecciona un registro para eliminar.")
+            return
+
+        if messagebox.askyesno("Confirmar", "¿Estás seguro de que quieres eliminar este registro?"):
+            index = selected_indices[0]
+            item = self.time_listbox.get(index)
+            
+            # Extraer la información necesaria del item
+            date, activity, ticket, comment = self.parse_listbox_item(item)
+            
+            # Eliminar de la base de datos
+            if basededatos.delete_time_entry(date, activity, ticket, comment):
+                # Si se eliminó exitosamente de la base de datos, eliminar de la listbox
+                self.time_listbox.delete(index)
+                messagebox.showinfo("Éxito", "Registro eliminado correctamente.")
+                self.update_total_hours()  # Actualizar las horas totales
+            else:
+                messagebox.showerror("Error", "No se pudo eliminar el registro de la base de datos.")
+
+
+    def parse_listbox_item(self, item):
+        # Parsear el item de la listbox para extraer la información necesaria
+        parts = item.split(' - ')
+        date = self.fecha_seleccionada
+        activity = parts[2]
+        ticket = parts[3].split(': ')[1]
+        comment = parts[4]
+        return date, activity, ticket, comment
 
     def create_import_button(self):
         redmine = RedmineTimeLoggerApp()
-        import_button = ttk.Button(self.root, text="Importar registros", command=redmine.import_records_from_redmine)
+        import_button = ttk.Button(self.root, style= "Green.TButton",text="Importar registros", command=redmine.import_records_from_redmine)
         import_button.pack(pady=10)
 
         
@@ -1034,14 +1150,17 @@ class RedmineTimeLoggerApp:
         base_de_datos = BasedeDatos()
         utils = Utils()
         import_window = filedialog.askopenfile(title='Selecciona el archivo csv de redmine')
-        redmine_df = pd.read_csv(import_window, delimiter=';')
-        df = redmine_df[['Fecha', 'Actividad','Petición',  'Comentario', 'Horas']]
-        df['Actividad'] = df['Actividad'].apply(utils.obtener_codigo_opcion)
-        df['Ticket'] = df['Petición'].apply(utils.extraer_numero)
-        df_final = df[['Fecha', 'Ticket', 'Actividad', 'Comentario', 'Horas']]
-        records = list(df_final.itertuples(index=False, name=None))
-        base_de_datos.import_records_from_redmine(records)
-        messagebox.showinfo(title='Importación finalizada', message='Puede visualizar los registros en la bitácora')
+        try:
+            redmine_df = pd.read_csv(import_window, delimiter=';')
+            df = redmine_df[['Fecha', 'Actividad','Petición',  'Comentario', 'Horas']]
+            df['Actividad'] = df['Actividad'].apply(utils.obtener_codigo_opcion)
+            df['Ticket'] = df['Petición'].apply(utils.extraer_numero)
+            df_final = df[['Fecha', 'Ticket', 'Actividad', 'Comentario', 'Horas']]
+            records = list(df_final.itertuples(index=False, name=None))
+            base_de_datos.import_records_from_redmine(records)
+            messagebox.showinfo(title='Importación finalizada', message='Puede visualizar los registros en la bitácora')
+        except Exception as e:
+            messagebox.showinfo(title= 'Error de importación', message=f'Ocurrió un error al intentar importar los archivos {str(e)}')
         return records
     
 
